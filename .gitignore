@@ -1,0 +1,15 @@
+node_modules/*
+.DS_Store
+dist
+*.local
+.vite-inspect
+.remote-assets
+components.d.ts
+pages
+snippets
+slides-examples.md
+.pip_tmp
+.vscode
+.idea
+.env
+.envrc

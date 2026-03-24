@@ -1,0 +1,12 @@
+#cloud-config
+# Démarrage de l'instance — installation de Docker
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-plugin
+
+runcmd:
+  - systemctl enable docker
+  - systemctl start docker
+  - mkdir -p /opt/app
+  - chown ubuntu:ubuntu /opt/app
