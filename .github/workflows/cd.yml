@@ -12,7 +12,6 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     outputs:
       sha: ${{ github.event.workflow_run.head_sha }}
-      # On exporte aussi le nom du repo en minuscules pour les autres jobs
       repo_lower: ${{ steps.repo.outputs.lowercase }}
     steps:
       - id: repo
@@ -39,21 +38,27 @@ jobs:
       - name: Deploy to Scaleway instance (staging)
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # On définit le nom en minuscules ici pour l'utiliser dans la commande SSH
           REPO_LOWER: ${{ needs.check.outputs.repo_lower }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
+          # Extraction du owner en minuscules
+          ONLY_OWNER=$(echo "${{ env.REPO_LOWER }}" | cut -d/ -f1)
+          
           ssh -o StrictHostKeyChecking=no \
               -i /tmp/ssh_key \
               ubuntu@${{ secrets.INSTANCE_IP }} \
               "echo '$GHCR_TOKEN' | docker login ghcr.io -u ${{ github.actor }} --password-stdin && \
                cd /opt/app && \
-               GITHUB_REPOSITORY_OWNER=$(echo $REPO_LOWER | cut -d/ -f1) \
-               APP_VERSION=${{ needs.check.outputs.sha }} \
+               export GITHUB_REPOSITORY_OWNER=$ONLY_OWNER && \
+               export DB_PASSWORD=${{ env.DB_PASSWORD }} && \
+               # On essaie de tirer le SHA spécifique, sinon on utilise latest
+               export APP_VERSION=${{ needs.check.outputs.sha }} && \
+               (docker compose pull api || (export APP_VERSION=latest && docker compose pull api)) && \
                docker compose up -d --no-build"
 
       - name: Smoke test staging
         run: |
-          sleep 5
+          sleep 10
           curl --fail http://${{ secrets.INSTANCE_IP }}/api/health
 
   # ------------------------------------------------------------------ #
@@ -77,18 +82,22 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO_LOWER: ${{ needs.check.outputs.repo_lower }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
+          ONLY_OWNER=$(echo "${{ env.REPO_LOWER }}" | cut -d/ -f1)
+
           ssh -o StrictHostKeyChecking=no \
               -i /tmp/ssh_key \
               ubuntu@${{ secrets.INSTANCE_IP }} \
               "echo '$GHCR_TOKEN' | docker login ghcr.io -u ${{ github.actor }} --password-stdin && \
                cd /opt/app && \
-               docker pull ghcr.io/${{ env.REPO_LOWER }}:${{ needs.check.outputs.sha }} && \
-               GITHUB_REPOSITORY_OWNER=$(echo ${{ env.REPO_LOWER }} | cut -d/ -f1) \
-               APP_VERSION=${{ needs.check.outputs.sha }} \
+               export GITHUB_REPOSITORY_OWNER=$ONLY_OWNER && \
+               export DB_PASSWORD=${{ env.DB_PASSWORD }} && \
+               export APP_VERSION=${{ needs.check.outputs.sha }} && \
+               (docker compose pull api || (export APP_VERSION=latest && docker compose pull api)) && \
                docker compose up -d --no-build"
 
       - name: Verify production health
         run: |
-          sleep 5
+          sleep 10
           curl --fail http://${{ secrets.INSTANCE_IP }}/api/health
