@@ -41,7 +41,6 @@ jobs:
           REPO_LOWER: ${{ needs.check.outputs.repo_lower }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
-          # Extraction du owner en minuscules
           ONLY_OWNER=$(echo "${{ env.REPO_LOWER }}" | cut -d/ -f1)
           
           ssh -o StrictHostKeyChecking=no \
@@ -51,9 +50,14 @@ jobs:
                cd /opt/app && \
                export GITHUB_REPOSITORY_OWNER=$ONLY_OWNER && \
                export DB_PASSWORD=${{ env.DB_PASSWORD }} && \
-               # On essaie de tirer le SHA spécifique, sinon on utilise latest
+               # Etape 1 : On essaie de pull le SHA, sinon on bascule sur latest
                export APP_VERSION=${{ needs.check.outputs.sha }} && \
-               (docker compose pull api || (export APP_VERSION=latest && docker compose pull api)) && \
+               if ! docker compose pull api; then
+                 echo 'SHA tag not found, falling back to latest'
+                 export APP_VERSION=latest
+                 docker compose pull api
+               fi && \
+               # Etape 2 : On lance avec la version qui a fonctionné
                docker compose up -d --no-build"
 
       - name: Smoke test staging
@@ -85,7 +89,7 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           ONLY_OWNER=$(echo "${{ env.REPO_LOWER }}" | cut -d/ -f1)
-
+          
           ssh -o StrictHostKeyChecking=no \
               -i /tmp/ssh_key \
               ubuntu@${{ secrets.INSTANCE_IP }} \
@@ -93,8 +97,14 @@ jobs:
                cd /opt/app && \
                export GITHUB_REPOSITORY_OWNER=$ONLY_OWNER && \
                export DB_PASSWORD=${{ env.DB_PASSWORD }} && \
+               # Etape 1 : On essaie de pull le SHA, sinon on bascule sur latest
                export APP_VERSION=${{ needs.check.outputs.sha }} && \
-               (docker compose pull api || (export APP_VERSION=latest && docker compose pull api)) && \
+               if ! docker compose pull api; then
+                 echo 'SHA tag not found, falling back to latest'
+                 export APP_VERSION=latest
+                 docker compose pull api
+               fi && \
+               # Etape 2 : On lance avec la version qui a fonctionné
                docker compose up -d --no-build"
 
       - name: Verify production health
